@@ -3,100 +3,252 @@ name: enterprise-spine-leaf
 topology:
   nodes:
 
-    # Edge Router
+    # Edge/Border Router — AS65000
+    # Simulates connection to upstream ISP
+    # Runs eBGP to all 3 spines
     router1:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.2
+      labels:
+        role: router
+        bgp-as: "65000"
+        layer: edge
 
-    # Spines
+    # Spine Layer — AS65001 (shared AS for all spines)
+    # Full mesh eBGP to all leaves
+    # eBGP to router1 (upstream)
     SP1:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.11
+      labels:
+        role: spine
+        bgp-as: "65001"
+        layer: spine
 
     SP2:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.12
+      labels:
+        role: spine
+        bgp-as: "65001"
+        layer: spine
 
     SP3:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.13
+      labels:
+        role: spine
+        bgp-as: "65001"
+        layer: spine
 
-    # Leaves
+    # Leaf Layer — each leaf has its own AS (AS per rack design)
+    # This is exactly how hyperscale DCs like Meta/Amazon design BGP
     SP4:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.14
+      labels:
+        role: leaf
+        bgp-as: "65004"
+        layer: leaf
+        rack: rack-1
 
     SP5:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.15
+      labels:
+        role: leaf
+        bgp-as: "65005"
+        layer: leaf
+        rack: rack-2
 
     SP6:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.16
+      labels:
+        role: leaf
+        bgp-as: "65006"
+        layer: leaf
+        rack: rack-3
 
     SP7:
       kind: linux
       image: nicolaka/netshoot
       mgmt-ipv4: 172.20.20.17
+      labels:
+        role: leaf
+        bgp-as: "65007"
+        layer: leaf
+        rack: rack-4
 
-    # End devices (servers)
+    # Server Layer — end hosts in each rack
+    # Get default route from their ToR leaf switch
     SRV1:
       kind: linux
       image: ubuntu:22.04
       mgmt-ipv4: 172.20.20.21
+      labels:
+        role: server
+        rack: rack-1
+        connected-leaf: SP4
 
     SRV2:
       kind: linux
       image: ubuntu:22.04
       mgmt-ipv4: 172.20.20.22
+      labels:
+        role: server
+        rack: rack-2
+        connected-leaf: SP5
 
     SRV3:
       kind: linux
       image: ubuntu:22.04
       mgmt-ipv4: 172.20.20.23
+      labels:
+        role: server
+        rack: rack-3
+        connected-leaf: SP6
 
     SRV4:
       kind: linux
       image: ubuntu:22.04
       mgmt-ipv4: 172.20.20.24
+      labels:
+        role: server
+        rack: rack-4
+        connected-leaf: SP7
 
-    # Network Automation node
+    # Network Automation Node
+    # Runs Ansible, Python scripts, GitHub Actions runner
     automation:
       kind: linux
       image: ubuntu:22.04
       mgmt-ipv4: 172.20.20.100
+      labels:
+        role: automation
+        layer: management
 
   links:
-    # Edge router to spines
+    # Edge router to spines (eBGP AS65000 to AS65001)
     - endpoints: ["router1:eth1", "SP1:eth1"]
-    - endpoints: ["router1:eth2", "SP2:eth1"]
-    - endpoints: ["router1:eth3", "SP3:eth1"]
+      labels:
+        bgp: "eBGP AS65000-AS65001"
+        ip-a: "10.0.1.1/30"
+        ip-b: "10.0.1.2/30"
 
-    # Spine to Leaf (full mesh)
+    - endpoints: ["router1:eth2", "SP2:eth1"]
+      labels:
+        bgp: "eBGP AS65000-AS65001"
+        ip-a: "10.0.2.1/30"
+        ip-b: "10.0.2.2/30"
+
+    - endpoints: ["router1:eth3", "SP3:eth1"]
+      labels:
+        bgp: "eBGP AS65000-AS65001"
+        ip-a: "10.0.3.1/30"
+        ip-b: "10.0.3.2/30"
+
+    # Spine to Leaf (eBGP AS65001 to AS6500x)
     - endpoints: ["SP1:eth2", "SP4:eth1"]
+      labels:
+        bgp: "eBGP AS65001-AS65004"
+        ip-a: "10.1.1.1/30"
+        ip-b: "10.1.1.2/30"
+
     - endpoints: ["SP1:eth3", "SP5:eth1"]
+      labels:
+        bgp: "eBGP AS65001-AS65005"
+        ip-a: "10.1.2.1/30"
+        ip-b: "10.1.2.2/30"
+
     - endpoints: ["SP1:eth4", "SP6:eth1"]
+      labels:
+        bgp: "eBGP AS65001-AS65006"
+        ip-a: "10.1.3.1/30"
+        ip-b: "10.1.3.2/30"
+
     - endpoints: ["SP1:eth5", "SP7:eth1"]
+      labels:
+        bgp: "eBGP AS65001-AS65007"
+        ip-a: "10.1.4.1/30"
+        ip-b: "10.1.4.2/30"
 
     - endpoints: ["SP2:eth2", "SP4:eth2"]
+      labels:
+        bgp: "eBGP AS65001-AS65004"
+        ip-a: "10.2.1.1/30"
+        ip-b: "10.2.1.2/30"
+
     - endpoints: ["SP2:eth3", "SP5:eth2"]
+      labels:
+        bgp: "eBGP AS65001-AS65005"
+        ip-a: "10.2.2.1/30"
+        ip-b: "10.2.2.2/30"
+
     - endpoints: ["SP2:eth4", "SP6:eth2"]
+      labels:
+        bgp: "eBGP AS65001-AS65006"
+        ip-a: "10.2.3.1/30"
+        ip-b: "10.2.3.2/30"
+
     - endpoints: ["SP2:eth5", "SP7:eth2"]
+      labels:
+        bgp: "eBGP AS65001-AS65007"
+        ip-a: "10.2.4.1/30"
+        ip-b: "10.2.4.2/30"
 
     - endpoints: ["SP3:eth2", "SP4:eth3"]
-    - endpoints: ["SP3:eth3", "SP5:eth3"]
-    - endpoints: ["SP3:eth4", "SP6:eth3"]
-    - endpoints: ["SP3:eth5", "SP7:eth3"]
+      labels:
+        bgp: "eBGP AS65001-AS65004"
+        ip-a: "10.3.1.1/30"
+        ip-b: "10.3.1.2/30"
 
-    # Leaf to End devices
+    - endpoints: ["SP3:eth3", "SP5:eth3"]
+      labels:
+        bgp: "eBGP AS65001-AS65005"
+        ip-a: "10.3.2.1/30"
+        ip-b: "10.3.2.2/30"
+
+    - endpoints: ["SP3:eth4", "SP6:eth3"]
+      labels:
+        bgp: "eBGP AS65001-AS65006"
+        ip-a: "10.3.3.1/30"
+        ip-b: "10.3.3.2/30"
+
+    - endpoints: ["SP3:eth5", "SP7:eth3"]
+      labels:
+        bgp: "eBGP AS65001-AS65007"
+        ip-a: "10.3.4.1/30"
+        ip-b: "10.3.4.2/30"
+
+    # Leaf to Server (access layer)
     - endpoints: ["SP4:eth4", "SRV1:eth1"]
+      labels:
+        type: access
+        ip-a: "10.4.1.1/30"
+        ip-b: "10.4.1.2/30"
+
     - endpoints: ["SP5:eth4", "SRV2:eth1"]
+      labels:
+        type: access
+        ip-a: "10.4.2.1/30"
+        ip-b: "10.4.2.2/30"
+
     - endpoints: ["SP6:eth4", "SRV3:eth1"]
+      labels:
+        type: access
+        ip-a: "10.4.3.1/30"
+        ip-b: "10.4.3.2/30"
+
     - endpoints: ["SP7:eth4", "SRV4:eth1"]
+      labels:
+        type: access
+        ip-a: "10.4.4.1/30"
+        ip-b: "10.4.4.2/30"
