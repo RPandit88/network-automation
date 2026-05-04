@@ -3,9 +3,6 @@ name: enterprise-spine-leaf
 topology:
   nodes:
 
-    # Edge/Border Router — AS65000
-    # Simulates connection to upstream ISP
-    # Runs eBGP to all 3 spines
     router1:
       kind: linux
       image: nicolaka/netshoot
@@ -14,10 +11,12 @@ topology:
         role: router
         bgp-as: "65000"
         layer: edge
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/router1.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/router1.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
-    # Spine Layer — AS65001 (shared AS for all spines)
-    # Full mesh eBGP to all leaves
-    # eBGP to router1 (upstream)
     SP1:
       kind: linux
       image: nicolaka/netshoot
@@ -26,6 +25,11 @@ topology:
         role: spine
         bgp-as: "65001"
         layer: spine
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/SP1.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/SP1.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
     SP2:
       kind: linux
@@ -35,6 +39,11 @@ topology:
         role: spine
         bgp-as: "65001"
         layer: spine
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/SP2.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/SP2.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
     SP3:
       kind: linux
@@ -44,9 +53,12 @@ topology:
         role: spine
         bgp-as: "65001"
         layer: spine
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/SP3.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/SP3.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
-    # Leaf Layer — each leaf has its own AS (AS per rack design)
-    # This is exactly how hyperscale DCs like Meta/Amazon design BGP
     SP4:
       kind: linux
       image: nicolaka/netshoot
@@ -56,6 +68,11 @@ topology:
         bgp-as: "65004"
         layer: leaf
         rack: rack-1
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/SP4.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/SP4.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
     SP5:
       kind: linux
@@ -66,6 +83,11 @@ topology:
         bgp-as: "65005"
         layer: leaf
         rack: rack-2
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/SP5.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/SP5.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
     SP6:
       kind: linux
@@ -76,6 +98,11 @@ topology:
         bgp-as: "65006"
         layer: leaf
         rack: rack-3
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/SP6.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/SP6.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
     SP7:
       kind: linux
@@ -86,9 +113,12 @@ topology:
         bgp-as: "65007"
         layer: leaf
         rack: rack-4
+      binds:
+        - /home/ubuntu/network-automation/startup-configs/SP7.sh:/startup.sh
+        - /home/ubuntu/network-automation/bird-configs/SP7.conf:/etc/bird.conf
+      exec:
+        - sh /startup.sh
 
-    # Server Layer — end hosts in each rack
-    # Get default route from their ToR leaf switch
     SRV1:
       kind: linux
       image: ubuntu:22.04
@@ -125,8 +155,6 @@ topology:
         rack: rack-4
         connected-leaf: SP7
 
-    # Network Automation Node
-    # Runs Ansible, Python scripts, GitHub Actions runner
     automation:
       kind: linux
       image: ubuntu:22.04
@@ -136,7 +164,6 @@ topology:
         layer: management
 
   links:
-    # Edge router to spines (eBGP AS65000 to AS65001)
     - endpoints: ["router1:eth1", "SP1:eth1"]
       labels:
         bgp: "eBGP AS65000-AS65001"
@@ -155,7 +182,6 @@ topology:
         ip-a: "10.0.3.1/30"
         ip-b: "10.0.3.2/30"
 
-    # Spine to Leaf (eBGP AS65001 to AS6500x)
     - endpoints: ["SP1:eth2", "SP4:eth1"]
       labels:
         bgp: "eBGP AS65001-AS65004"
@@ -228,7 +254,6 @@ topology:
         ip-a: "10.3.4.1/30"
         ip-b: "10.3.4.2/30"
 
-    # Leaf to Server (access layer)
     - endpoints: ["SP4:eth4", "SRV1:eth1"]
       labels:
         type: access
