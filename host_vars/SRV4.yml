@@ -1,0 +1,4 @@
+interfaces:
+- ip: 10.4.4.2
+  name: eth1
+  prefix: 30

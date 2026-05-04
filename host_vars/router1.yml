@@ -1,0 +1,10 @@
+interfaces:
+- ip: 10.0.1.1
+  name: eth1
+  prefix: 30
+- ip: 10.0.2.1
+  name: eth2
+  prefix: 30
+- ip: 10.0.3.1
+  name: eth3
+  prefix: 30
