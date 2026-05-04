@@ -1,3 +1,33 @@
-git add .github/workflows/deploy.yml
-git commit -m "Add GitHub Actions CI/CD pipeline"
-git push origin main
+name: Network Config Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure device interfaces
+        run: |
+          source /home/ubuntu/venv/bin/activate
+          python3 /home/ubuntu/network-automation/scripts/configure_devices.py
+
+      - name: Configure BGP
+        run: |
+          source /home/ubuntu/venv/bin/activate
+          python3 /home/ubuntu/network-automation/scripts/write_bgp_configs_v2.py
+
+      - name: Verify BGP sessions
+        run: |
+          sleep 15
+          sudo docker exec clab-enterprise-spine-leaf-SP1 sh -c "birdc show protocols"
+
+      - name: Test connectivity
+        run: |
+          sudo docker exec clab-enterprise-spine-leaf-SP4 ping -c 3 10.4.4.1
