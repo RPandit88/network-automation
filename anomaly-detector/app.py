@@ -115,7 +115,7 @@ def analyze_with_gemini(device, log_text):
         }
 
     try:
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         prompt = f"""You are a senior network operations engineer analyzing logs from a spine-leaf data center network.
 
 Device: {device}
