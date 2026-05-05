@@ -75,4 +75,44 @@ protocol bgp sp3 { local 10.3.2.2 as 65005; neighbor 10.3.2.1 as 65001; ipv4 { i
 """,
 'SP6': """router id 10.0.0.6;
 protocol kernel { ipv4 { export all; import all; }; }
-prot
+protocol device { scan time 10; }
+protocol static {
+    ipv4;
+    route 10.4.3.0/30 blackhole;
+}
+protocol bgp sp1 { local 10.1.3.2 as 65006; neighbor 10.1.3.1 as 65001; ipv4 { import all; export all; }; }
+protocol bgp sp2 { local 10.2.3.2 as 65006; neighbor 10.2.3.1 as 65001; ipv4 { import all; export all; }; }
+protocol bgp sp3 { local 10.3.3.2 as 65006; neighbor 10.3.3.1 as 65001; ipv4 { import all; export all; }; }
+""",
+'SP7': """router id 10.0.0.7;
+protocol kernel { ipv4 { export all; import all; }; }
+protocol device { scan time 10; }
+protocol static {
+    ipv4;
+    route 10.4.4.0/30 blackhole;
+}
+protocol bgp sp1 { local 10.1.4.2 as 65007; neighbor 10.1.4.1 as 65001; ipv4 { import all; export all; }; }
+protocol bgp sp2 { local 10.2.4.2 as 65007; neighbor 10.2.4.1 as 65001; ipv4 { import all; export all; }; }
+protocol bgp sp3 { local 10.3.4.2 as 65007; neighbor 10.3.4.1 as 65001; ipv4 { import all; export all; }; }
+"""
+}
+
+# Automation Logic: Create the directory and write the configs
+def generate_bird_configs():
+    try:
+        os.makedirs(base, exist_ok=True)
+        print(f"Target directory established: {base}")
+        
+        for router_name, config_text in configs.items():
+            # Standardize filename format (e.g., sp1.conf)
+            file_path = os.path.join(base, f"{router_name.lower()}.conf")
+            
+            with open(file_path, 'w') as f:
+                f.write(config_text)
+            print(f"Successfully wrote configuration for {router_name} -> {file_path}")
+            
+    except Exception as e:
+        print(f"Error generating configurations: {e}")
+
+if __name__ == "__main__":
+    generate_bird_configs()
