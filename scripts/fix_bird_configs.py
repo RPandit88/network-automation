@@ -2,8 +2,8 @@
 """
 fix_bird_configs.py
 Writes correct BIRD configs with static routes directly into each container.
-This version includes graceful BIRD reloads to prevent BGP session drops
-and proper exit-code evaluation for validation testing.
+This version includes graceful BIRD reloads, loopback IP assignment, 
+and proper exit-code evaluation for automated validation testing.
 """
 import subprocess
 import time
@@ -145,6 +145,27 @@ def restart_bird(device):
     )
 
 
+def assign_loopback_ips():
+    """Assigns the .1 IP addresses to the loopback interfaces inside the containers."""
+    print("\nAssigning loopback IPs for testing...")
+    # Using '|| true' so the script doesn't fail if the IP is already assigned from a previous run
+    loopbacks = {
+        "SP4": "10.4.1.1/32",
+        "SP5": "10.4.2.1/32",
+        "SP6": "10.4.3.1/32",
+        "SP7": "10.4.4.1/32"
+    }
+    
+    for device, ip in loopbacks.items():
+        container = f"{PREFIX}-{device}"
+        subprocess.run(
+            ["sudo", "docker", "exec", container,
+             "sh", "-c", f"ip addr add {ip} dev lo 2>/dev/null || true"],
+            capture_output=True
+        )
+        print(f"  Assigned {ip} to lo on {device}")
+
+
 def verify(device):
     """Show protocols to confirm configuration is loaded."""
     container = f"{PREFIX}-{device}"
@@ -164,7 +185,9 @@ for device, config in CONFIGS.items():
         print(f"  {device}: config written and BIRD gracefully reloaded")
 
 print("\nWaiting 15 seconds for BGP to converge...")
-time.sleep(15) # Reduced from 30s since hitless reloads are faster than full restarts
+time.sleep(15)
+
+assign_loopback_ips()
 
 print("\nVerifying protocols...")
 for device in ["SP1", "SP4", "SP7"]:
@@ -183,6 +206,6 @@ print(result.stdout)
 if result.returncode == 0:
     print("✅ Ping successful! Fabric is routing end-to-end.")
 else:
-    print("❌ Ping failed! Ensure 10.4.4.1 is assigned to a loopback on SP7, otherwise the blackhole route will drop the ICMP packet.")
+    print("❌ Ping failed! Check routing tables and loopback assignments.")
     
 print("Done!")
