@@ -6,6 +6,7 @@ import os
 import subprocess
 import datetime
 from google import genai as google_genai
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -83,9 +84,8 @@ def analyze_with_gemini(device, log_text):
             "anomaly_detected": False,
             "recommendation": "Add GEMINI_API_KEY environment variable"
         }
-    try:
-        client = google_genai.Client(api_key=GEMINI_API_KEY)
-        prompt = f"""You are a senior network operations engineer analyzing logs from a spine-leaf data center network.
+
+    prompt = f"""You are a senior network operations engineer analyzing logs from a spine-leaf data center network.
 
 Device: {device}
 Time: {datetime.datetime.now().isoformat()}
@@ -103,40 +103,46 @@ URGENCY: [immediate/scheduled/monitoring]
 Network logs:
 {log_text}"""
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
-        text = response.text
+    for attempt in range(3):
+        try:
+            client = google_genai.Client(api_key=GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            text = response.text
 
-        severity = "LOW"
-        for level in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-            if level in text.upper():
-                severity = level
-                break
+            severity = "LOW"
+            for level in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+                if level in text.upper():
+                    severity = level
+                    break
 
-        anomaly_detected = "ANOMALY_DETECTED: YES" in text.upper()
+            anomaly_detected = "ANOMALY_DETECTED: YES" in text.upper()
 
-        recommendation = ""
-        for line in text.split("\n"):
-            if "RECOMMENDED_ACTION:" in line.upper():
-                recommendation = line.split(":", 1)[1].strip()
-                break
+            recommendation = ""
+            for line in text.split("\n"):
+                if "RECOMMENDED_ACTION:" in line.upper():
+                    recommendation = line.split(":", 1)[1].strip()
+                    break
 
-        return {
-            "analysis": text,
-            "severity": severity,
-            "anomaly_detected": anomaly_detected,
-            "recommendation": recommendation
-        }
+            return {
+                "analysis": text,
+                "severity": severity,
+                "anomaly_detected": anomaly_detected,
+                "recommendation": recommendation
+            }
 
-    except Exception as e:
-        return {
-            "analysis": f"Error: {str(e)}",
-            "severity": "UNKNOWN",
-            "anomaly_detected": False,
-            "recommendation": "Check API key and connectivity"
-        }
+        except Exception as e:
+            if "503" in str(e) and attempt < 2:
+                time.sleep(10)
+                continue
+            return {
+                "analysis": f"Error: {str(e)}",
+                "severity": "UNKNOWN",
+                "anomaly_detected": False,
+                "recommendation": "Check API key and connectivity"
+            }
 
 
 @app.route("/health", methods=["GET"])
