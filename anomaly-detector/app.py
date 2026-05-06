@@ -13,7 +13,8 @@ CORS(app)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 PREFIX = "clab-enterprise-spine-leaf"
-DEVICES = ["SP1", "SP4", "router1"]
+#DEVICES = ["SP1", "SP4", "router1"]
+DEVICES = ["SP1", "SP4", "SP7"]
 #DEVICES = ["SP1", "SP2", "SP3", "SP4", "SP5", "SP6", "SP7", "router1"]
 
 
