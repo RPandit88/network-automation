@@ -7,7 +7,7 @@ This creates the source of truth for topology validation.
 import pynetbox
 
 NETBOX_URL = "https://netbox.networkforai.com"
-NETBOX_TOKEN = "YOUR_TOKEN_HERE"
+NETBOX_TOKEN = "debazCPl3k95Y9CTfyfB9iEPIKcDfBUxhS3LKoZn"
 
 nb = pynetbox.api(NETBOX_URL, token=NETBOX_TOKEN)
 
