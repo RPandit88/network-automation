@@ -5,8 +5,8 @@ import re
 import os
 import subprocess
 import datetime
-from google import genai as google_genai
 import time
+from google import genai as google_genai
 
 app = Flask(__name__)
 CORS(app)
@@ -134,11 +134,13 @@ Network logs:
             }
 
         except Exception as e:
-            if "503" in str(e) and attempt < 2:
-                time.sleep(10)
+            error_str = str(e)
+            if ("503" in error_str or "429" in error_str) and attempt < 2:
+                wait_time = 45 if "429" in error_str else 10
+                time.sleep(wait_time)
                 continue
             return {
-                "analysis": f"Error: {str(e)}",
+                "analysis": f"Error: {error_str}",
                 "severity": "UNKNOWN",
                 "anomaly_detected": False,
                 "recommendation": "Check API key and connectivity"
@@ -163,6 +165,7 @@ def redact():
 def collect_and_analyze():
     results = []
     anomalies_found = []
+
     for device in DEVICES:
         try:
             raw_logs = collect_device_logs(device)
@@ -180,6 +183,8 @@ def collect_and_analyze():
             results.append(result)
             if analysis["anomaly_detected"]:
                 anomalies_found.append(result)
+            time.sleep(4)
+
         except Exception as e:
             results.append({
                 "device": device,
@@ -188,6 +193,7 @@ def collect_and_analyze():
                 "anomaly_detected": False,
                 "error": str(e)
             })
+
     return jsonify({
         "total_devices_checked": len(DEVICES),
         "anomalies_found": len(anomalies_found),
