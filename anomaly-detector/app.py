@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+app.py
+Network Anomaly Detector API
+Collects logs from Containerlab devices, redacts sensitive data,
+sends to Gemini AI for analysis, returns structured results to n8n.
+"""
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import re
@@ -13,14 +19,17 @@ CORS(app)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 PREFIX = "clab-enterprise-spine-leaf"
-#DEVICES = ["SP1", "SP4", "router1"]
-DEVICES = ["SP1", "SP4", "SP7"]
-#DEVICES = ["SP1", "SP2", "SP3", "SP4", "SP5", "SP6", "SP7", "router1"]
+DEVICES = ["SP1", "SP2", "SP3", "SP4", "SP5", "SP6", "SP7", "router1"]
 
+
+# ─────────────────────────────────────────────
+# REDACTION
+# ─────────────────────────────────────────────
 
 def redact_log(text, rules=None):
     if rules is None:
         rules = {"ip": True, "mac": True, "as": True, "host": True, "cred": True}
+
     out = text
     counts = {"ip": 0, "mac": 0, "as": 0, "host": 0, "cred": 0}
     ip_map = {}
@@ -66,6 +75,10 @@ def redact_log(text, rules=None):
     return {"redacted": out, "counts": counts}
 
 
+# ─────────────────────────────────────────────
+# LOG COLLECTION
+# ─────────────────────────────────────────────
+
 def collect_device_logs(device):
     container = f"{PREFIX}-{device}"
     commands = ["birdc show protocols", "birdc show route count", "ip route show"]
@@ -78,13 +91,60 @@ def collect_device_logs(device):
     return "\n".join(logs)
 
 
+# ─────────────────────────────────────────────
+# GEMINI RESPONSE PARSER
+# ─────────────────────────────────────────────
+
+def parse_gemini_response(text):
+    """Parse Gemini structured response into clean separate fields."""
+
+    def extract(pattern, t):
+        m = re.search(pattern, t, re.IGNORECASE | re.DOTALL)
+        return m.group(1).strip() if m else ""
+
+    severity = extract(r"SEVERITY:\s*([A-Z]+)", text)
+    if severity not in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+        severity = "UNKNOWN"
+
+    anomaly_raw = extract(r"ANOMALY_DETECTED:\s*(\w+)", text)
+    anomaly_detected = "yes" in anomaly_raw.lower()
+
+    issues_found = extract(
+        r"ISSUES_FOUND:\s*([\s\S]+?)(?=\nROOT_CAUSE:|\nRECOMMENDED_ACTION:|$)", text)
+
+    root_cause = extract(
+        r"ROOT_CAUSE:\s*([\s\S]+?)(?=\nRECOMMENDED_ACTION:|\nURGENCY:|$)", text)
+
+    recommended_action = extract(
+        r"RECOMMENDED_ACTION:\s*([\s\S]+?)(?=\nURGENCY:|$)", text)
+
+    urgency = extract(r"URGENCY:\s*(\w+)", text)
+
+    return {
+        "severity":            severity,
+        "anomaly_detected":    anomaly_detected,
+        "issues_found":        issues_found,
+        "root_cause":          root_cause,
+        "recommended_action":  recommended_action,
+        "urgency":             urgency,
+        "raw":                 text
+    }
+
+
+# ─────────────────────────────────────────────
+# GEMINI ANALYSIS
+# ─────────────────────────────────────────────
+
 def analyze_with_gemini(device, log_text):
     if not GEMINI_API_KEY:
         return {
-            "analysis": "Gemini API key not configured",
-            "severity": "UNKNOWN",
-            "anomaly_detected": False,
-            "recommendation": "Add GEMINI_API_KEY environment variable"
+            "severity":            "UNKNOWN",
+            "anomaly_detected":    False,
+            "issues_found":        "Gemini API key not configured",
+            "root_cause":          "",
+            "recommended_action":  "Add GEMINI_API_KEY environment variable",
+            "urgency":             "monitoring",
+            "raw":                 ""
         }
 
     prompt = f"""You are a senior network operations engineer analyzing logs from a spine-leaf data center network.
@@ -94,7 +154,7 @@ Time: {datetime.datetime.now().isoformat()}
 
 Analyze the following network logs and identify any issues.
 
-Respond in this EXACT format:
+Respond in this EXACT format with no extra text before or after:
 SEVERITY: [LOW/MEDIUM/HIGH/CRITICAL]
 ANOMALY_DETECTED: [YES/NO]
 ISSUES_FOUND: [describe specific issues or None detected]
@@ -112,28 +172,7 @@ Network logs:
                 model="gemini-2.5-flash",
                 contents=prompt
             )
-            text = response.text
-
-            severity = "LOW"
-            for level in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-                if level in text.upper():
-                    severity = level
-                    break
-
-            anomaly_detected = "ANOMALY_DETECTED: YES" in text.upper()
-
-            recommendation = ""
-            for line in text.split("\n"):
-                if "RECOMMENDED_ACTION:" in line.upper():
-                    recommendation = line.split(":", 1)[1].strip()
-                    break
-
-            return {
-                "analysis": text,
-                "severity": severity,
-                "anomaly_detected": anomaly_detected,
-                "recommendation": recommendation
-            }
+            return parse_gemini_response(response.text)
 
         except Exception as e:
             error_str = str(e)
@@ -142,12 +181,19 @@ Network logs:
                 time.sleep(wait_time)
                 continue
             return {
-                "analysis": f"Error: {error_str}",
-                "severity": "UNKNOWN",
-                "anomaly_detected": False,
-                "recommendation": "Check API key and connectivity"
+                "severity":            "UNKNOWN",
+                "anomaly_detected":    False,
+                "issues_found":        f"API error: {error_str}",
+                "root_cause":          "",
+                "recommended_action":  "Check API key and connectivity",
+                "urgency":             "monitoring",
+                "raw":                 ""
             }
 
+
+# ─────────────────────────────────────────────
+# ROUTES
+# ─────────────────────────────────────────────
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -173,35 +219,46 @@ def collect_and_analyze():
             raw_logs = collect_device_logs(device)
             redacted = redact_log(raw_logs)
             analysis = analyze_with_gemini(device, redacted["redacted"])
+
             result = {
-                "device": device,
-                "timestamp": datetime.datetime.now().isoformat(),
-                "severity": analysis["severity"],
-                "anomaly_detected": analysis["anomaly_detected"],
-                "analysis": analysis["analysis"],
-                "recommendation": analysis["recommendation"],
-                "redaction_counts": redacted["counts"]
+                "device":             device,
+                "timestamp":          datetime.datetime.now().isoformat(),
+                "severity":           analysis["severity"],
+                "anomaly_detected":   analysis["anomaly_detected"],
+                "issues_found":       analysis["issues_found"],
+                "root_cause":         analysis["root_cause"],
+                "recommended_action": analysis["recommended_action"],
+                "urgency":            analysis["urgency"],
+                "raw_analysis":       analysis["raw"],
+                "redaction_counts":   redacted["counts"]
             }
+
             results.append(result)
             if analysis["anomaly_detected"]:
                 anomalies_found.append(result)
+
             time.sleep(4)
 
         except Exception as e:
             results.append({
-                "device": device,
-                "timestamp": datetime.datetime.now().isoformat(),
-                "severity": "UNKNOWN",
+                "device":           device,
+                "timestamp":        datetime.datetime.now().isoformat(),
+                "severity":         "UNKNOWN",
                 "anomaly_detected": False,
-                "error": str(e)
+                "issues_found":     str(e),
+                "root_cause":       "",
+                "recommended_action": "",
+                "urgency":          "monitoring",
+                "raw_analysis":     "",
+                "error":            str(e)
             })
 
     return jsonify({
         "total_devices_checked": len(DEVICES),
-        "anomalies_found": len(anomalies_found),
-        "anomalies": anomalies_found,
-        "all_results": results,
-        "timestamp": datetime.datetime.now().isoformat()
+        "anomalies_found":       len(anomalies_found),
+        "anomalies":             anomalies_found,
+        "all_results":           results,
+        "timestamp":             datetime.datetime.now().isoformat()
     })
 
 
@@ -213,9 +270,9 @@ def remediate():
          "/home/ubuntu/network-automation/scripts/fix_bird_configs.py"],
         capture_output=True, text=True)
     return jsonify({
-        "status": "remediation_complete",
-        "output": result.stdout,
-        "errors": result.stderr
+        "status":  "remediation_complete",
+        "output":  result.stdout,
+        "errors":  result.stderr
     })
 
 
